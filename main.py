@@ -1,60 +1,80 @@
-import numpy as np
-from PIL import Image
-from scipy.fftpack import dct, idct
+# Importar las librerías necesarias
+from PIL import Image  # Para leer y escribir imágenes
+import numpy as np  # Para hacer operaciones matemáticas con matrices
+import scipy.fftpack  # Para hacer la transformada discreta del coseno
 
+# Leer la imagen y convertirla a escala de grises
+img = Image.open(
+    "input.jpg"
+)  # Cambiar el nombre del archivo por el de la imagen que se quiere comprimir
+img = img.convert("L")  # Convertir a escala de grises
+img = np.array(img)  # Convertir a una matriz de NumPy
 
-def dct2(a):
-    return dct(dct(a.T, norm="ortho").T, norm="ortho")
+# Obtener las dimensiones de la imagen
+h, w = img.shape
 
+# Dividir la imagen en bloques de 8x8 píxeles
+bloques = []
+for i in range(0, h, 8):
+    for j in range(0, w, 8):
+        bloque = img[i : i + 8, j : j + 8]  # Extraer el bloque de 8x8 píxeles
+        bloques.append(bloque)  # Añadir el bloque a la lista de bloques
 
-def idct2(a):
-    return idct(idct(a.T, norm="ortho").T, norm="ortho")
+# Aplicar la DCT a cada bloque
+bloques_dct = []
+for bloque in bloques:
+    bloque_dct = scipy.fftpack.dct(
+        scipy.fftpack.dct(bloque.T, norm="ortho").T, norm="ortho"
+    )  # Aplicar la DCT bidimensional
+    bloques_dct.append(bloque_dct)  # Añadir el bloque DCT a la lista de bloques DCT
 
+# Aplicar una matriz de cuantización a cada bloque DCT para reducir el número de bits necesarios para representarlos
+# La matriz de cuantización se puede ajustar según el nivel de compresión deseado
+matriz_cuantizacion = np.array(
+    [
+        [16, 11, 10, 16, 24, 40, 51, 61],
+        [12, 12, 14, 19, 26, 58, 60, 55],
+        [14, 13, 16, 24, 40, 57, 69, 56],
+        [14, 17, 22, 29, 51, 87, 80, 62],
+        [18, 22, 37, 56, 68, 109, 103, 77],
+        [24, 35, 55, 64, 81, 104, 113, 92],
+        [49, 64, 78, 87, 103, 121, 120, 101],
+        [72, 92, 95, 98, 112, 100, 103, 99],
+    ]
+)
 
-def compress_channel(channel, quality):
-    # Aplicar la DCT al canal de color
-    channel_dct = dct2(channel)
+bloques_cuantizados = []
+for bloque_dct in bloques_dct:
+    bloque_cuantizado = np.round(
+        bloque_dct / matriz_cuantizacion
+    )  # Dividir el bloque DCT por la matriz de cuantización y redondear al entero más cercano
+    bloques_cuantizados.append(
+        bloque_cuantizado
+    )  # Añadir el bloque cuantizado a la lista de bloques cuantizados
 
-    # Umbral de calidad para la compresión
-    threshold = np.max(channel_dct) / quality
+# Reconstruir la imagen a partir de los bloques cuantizados
+img_reconstruida = np.zeros(
+    (h, w)
+)  # Crear una matriz vacía para la imagen reconstruida
+k = 0  # Contador para recorrer la lista de bloques cuantizados
+for i in range(0, h, 8):
+    for j in range(0, w, 8):
+        bloque_cuantizado = bloques_cuantizados[k]  # Obtener el bloque cuantizado
+        bloque_dct = (
+            bloque_cuantizado * matriz_cuantizacion
+        )  # Multiplicar el bloque cuantizado por la matriz de cuantización
+        bloque = scipy.fftpack.idct(
+            scipy.fftpack.idct(bloque_dct.T, norm="ortho").T, norm="ortho"
+        )  # Aplicar la IDCT bidimensional
+        img_reconstruida[
+            i : i + 8, j : j + 8
+        ] = bloque  # Sumar el bloque a la matriz de la imagen reconstruida
+        k += 1  # Incrementar el contador
 
-    # Aplicar el umbral a los coeficientes DCT
-    channel_dct[channel_dct < threshold] = 0
-
-    # Aplicar la IDCT para obtener el canal de color comprimido
-    channel_compressed = idct2(channel_dct)
-
-    # Normalizar los valores al rango 0-255
-    channel_compressed = np.clip(channel_compressed, 0, 255)
-
-    # Convertir a enteros de 8 bits
-    channel_compressed = channel_compressed.astype("uint8")
-
-    return channel_compressed
-
-
-def compress_image(image_path, quality):
-    # Cargar la imagen
-    img = Image.open(image_path)
-
-    # Convertir la imagen a una matriz y separar los canales de color
-    img_data = np.array(img)
-    red, green, blue = img_data[:, :, 0], img_data[:, :, 1], img_data[:, :, 2]
-
-    # Comprimir cada canal de color
-    red_compressed = compress_channel(red, quality)
-    green_compressed = compress_channel(green, quality)
-    blue_compressed = compress_channel(blue, quality)
-
-    # Combinar los canales de color comprimidos
-    img_compressed = np.stack(
-        (red_compressed, green_compressed, blue_compressed), axis=2
-    )
-
-    # Crear y guardar la imagen comprimida
-    img_compressed = Image.fromarray(img_compressed)
-    img_compressed.save("compressed_image.jpg")
-
-
-# Uso del código
-compress_image("input.jpg", 600)
+img_reconstruida = Image.fromarray(
+    img_reconstruida
+)  # Convertir el arreglo de numpy a una imagen de Pillow
+img_reconstruida = img_reconstruida.convert(
+    "RGB"
+)  # Convertir la imagen a modo L (escala de grises)
+img_reconstruida.save("imagen_reconstruida.webp")  #
